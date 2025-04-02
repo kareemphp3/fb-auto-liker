@@ -1,48 +1,55 @@
 const express = require('express');
 const bodyParser = require('body-parser');
+const path = require('path');
 const { chromium } = require('playwright');
 
 const app = express();
+const PORT = process.env.PORT || 3000;
+
 app.use(bodyParser.urlencoded({ extended: true }));
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'public')));
 app.set('view engine', 'ejs');
-app.set('views', './views');
+app.set('views', path.join(__dirname, 'views'));
 
 app.get('/', (req, res) => {
-  res.render('index', { message: null });
+    res.render('index');
 });
 
 app.post('/like', async (req, res) => {
-  const { cookies, postUrl } = req.body;
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext();
+    const { cookies, postUrl } = req.body;
 
-  try {
-    const cookieArray = cookies.split(';').map(cookie => {
-      const [name, ...rest] = cookie.trim().split('=');
-      return { name, value: rest.join('='), domain: '.facebook.com', path: '/' };
-    });
-
-    await context.addCookies(cookieArray);
+    const browser = await chromium.launch({ headless: true });
+    const context = await browser.newContext();
     const page = await context.newPage();
-    await page.goto(postUrl, { waitUntil: 'domcontentloaded' });
 
-    await page.waitForTimeout(3000);
-    await page.evaluate(() => window.scrollBy(0, 1000));
-    await page.waitForTimeout(3000);
+    try {
+        const parsedCookies = cookies.split(';').map(cookie => {
+            const [name, ...rest] = cookie.trim().split('=');
+            return { name, value: rest.join('='), domain: '.facebook.com', path: '/' };
+        });
 
-    const likeBtn = await page.$('[class*="x1ey2m1c"]');
-    if (likeBtn) {
-      await likeBtn.click();
-      res.render('index', { message: 'تم عمل لايك بنجاح' });
-    } else {
-      res.render('index', { message: '❌ زر اللايك مش لاقيينه' });
+        await context.addCookies(parsedCookies);
+        await page.goto(postUrl, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(3000);
+        await page.evaluate(() => window.scrollBy(0, 500));
+        await page.waitForTimeout(2000);
+
+        const likeButton = await page.$('div[class*="x1ey2m1c"]');
+        if (likeButton) {
+            await likeButton.click();
+            res.send('تم عمل لايك بنجاح');
+        } else {
+            res.send('❌ زر اللايك مش لاقيينه');
+        }
+
+        await browser.close();
+    } catch (error) {
+        console.error(error);
+        await browser.close();
+        res.send('❌ حصل خطأ أثناء التنفيذ');
     }
-  } catch (e) {
-    res.render('index', { message: 'حصل خطأ أثناء المحاولة' });
-  } finally {
-    await browser.close();
-  }
 });
 
-app.listen(3000, () => console.log('Server started on http://localhost:3000'));
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+});
